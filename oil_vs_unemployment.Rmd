@@ -1,0 +1,185 @@
+---
+title: "Oil Prices and Unemployment in Canadian Provinces"
+author: "Alexander Ondrus"
+date: "2/27/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lubridate)
+library(RColorBrewer)
+library(knitr)
+library(kableExtra)
+```
+
+## Question
+
+Originally, my question was:
+
+> How does the monthly average West Texas Intermediate Crude spot price correlate to the unemployment rate in each province in Canada?
+
+Now, I have expanded my question to:
+
+> What is the impact of various energy prices on employment in regions across Canada generally and in Alberta specifically?
+
+## Data
+
+### Original Chart
+
+The data that I used for my original question is:
+
+- Federal Reserve Bank of St. Louis, Spot Crude Oil Price: West Texas Intermediate (WTI) [WTISPLC], retrieved from FRED, Federal Reserve Bank of St. Louis; [https://fred.stlouisfed.org/series/WTISPLC](https://fred.stlouisfed.org/series/WTISPLC), February 27, 2020
+
+-  Statistics Canada.  Table  14-10-0287-03   [Labour force characteristics by province, monthly, seasonally adjusted](https://doi.org/10.25318/1410028701-eng)
+
+Table 14-10-0287-03 is a nearly 1 gigabyte CSV containing many different fields over many different levels of aggregation, so I subset it for the following:
+
+- All age groups ("15 years and over")
+- Estimates of the unemployment rate only
+- Both sexes
+- Seasonally adjusted data
+
+In the future, I may want to adjust these parameters, but for the purposes of uploading this to GitHub I will only post the subset .rds file. The function that I used to generate the file is defined below.
+
+```{r producing subset for all age groups only}
+filter_unemployment_table <- function(){
+  unemployment <- read_csv("14100287.csv") %>% 
+  filter(GEO != "Canada", 
+         `Age group` == "15 years and over", 
+         Statistics == "Estimate", 
+         `Labour force characteristics` == "Unemployment rate", 
+         Sex == "Both sexes", `Data type` == "Seasonally adjusted") %>% 
+  select(REF_DATE, GEO, VALUE)
+  
+unemployment$Year <- substr(unemployment$REF_DATE, 1, 4) %>% as.numeric()
+unemployment$Month <- substr(unemployment$REF_DATE, 6, 7) %>% as.numeric()
+unemployment$REF_DATE <- NULL
+saveRDS(unemployment, file = "unemployment_by_province_monthly.RDS")
+}
+```
+
+The code chunk below relies on the RDS file produced by the function defined above. If one wanted to introduce a date offset, it could easily be done by adjusting the date column in the `oil` data frame below. Note that I reduce the unemployment by a factor of 100 to make the ``scales::percent` argument work well below.
+
+```{r merging WTI and unemployment data, message=FALSE, warning=FALSE}
+unemployment <- readRDS("unemployment_by_province_monthly.RDS")
+
+oil <- read_csv("WTISPLC.csv")
+oil$Month <- month(oil$DATE)
+oil$Year <- year(oil$DATE)
+
+unemployment_and_oil <- left_join(unemployment, oil, by = c("Year", "Month")) %>% 
+  mutate(VALUE = VALUE / 100) %>% 
+  drop_na()
+
+colnames(unemployment_and_oil) <- c("Province", "Unemployment", 
+                                    "Year", "Month", "Date", "Oil")
+```
+
+I calculate simple correlation coefficients for each province. A more sophisticated analysis will consider the effects of autocorrelation of the respective time series for each variable. The `x` and `y` columns are set manually for a nice positioning of the $R^2$ values on the final charts.
+
+```{r Calculating r squared values}
+u_o_rsq <- unemployment_and_oil %>% 
+  group_by(Province) %>% 
+  summarise(rsq = cor(Oil, Unemployment)^2)
+
+u_o_rsq$labels <- paste("R^2 ==", round(u_o_rsq$rsq, 2))
+u_o_rsq$x <- 100
+u_o_rsq$y <- 0.20
+
+kable(u_o_rsq) %>% kable_styling(full_width = FALSE)
+```
+
+## Plots
+
+### Original
+
+To reduce the problem of lighter colours, I use a custom palette which makes one more colour than categories but drops the lightest colour.
+
+```{r generate faceted scatter plot, fig.height=8, fig.width=12}
+custom_palette <- brewer.pal(6, "YlOrRd")[2:6]
+
+p <- ggplot(unemployment_and_oil, aes(x = Oil, y = Unemployment)) +
+    geom_point(aes(colour = cut_width(Year, 10)),
+               alpha = 0.6) + 
+    geom_smooth(method = "lm", se = FALSE) + 
+    facet_wrap (~ Province, nrow = 2) + 
+    scale_colour_manual(values = custom_palette) +
+    geom_text(data = u_o_rsq, aes(x = x, y = y, label = labels), parse = TRUE) +
+    labs(title = "Oil Price vs. Unemployment in Canadian Provinces",
+         subtitle = "How does the correlation differ in different regions?",
+         x = "WTI Crude Spot Price (USD)",
+         y = "Seasonally Adjusted Unemployment Rate",
+         colour = "Year",
+         caption = "Created by: Alexander Ondrus\nEmployment Data: Statistics Canada.  Table  14-10-0287-03\nLabour force characteristics by province, monthly, seasonally adjusted\nOil Prices: Federal Reserve Bank of St. Louis,\nSpot Crude Oil Price: West Texas Intermediate (WTI) [WTISPLC],\nretrieved from FRED, Federal Reserve Bank of St. Louis;\nhttps://fred.stlouisfed.org/series/WTISPLC, February 27, 2020") +
+  scale_x_continuous(labels = scales::dollar) +
+  scale_y_continuous(labels = scales::percent)
+
+plot(p)
+```
+
+### Second Version
+
+Thanks to [Jens von Bergmann](https://twitter.com/vb_jens) for the idea of using `shape = 21`. This will allow me to use a lower value of alpha (to compensate for over-plotting) while still maintaining the visibility of lighter colours.
+
+
+```{r Second plot, fig.height=8, fig.width=12}
+p1 <- ggplot(unemployment_and_oil, aes(x = Oil, y = Unemployment)) +
+    geom_point(aes(fill = cut_width(Year, 10)),
+               alpha = 0.6,
+               shape = 21,
+               colour = "white") + 
+    geom_smooth(method = "lm", se = FALSE) + 
+    facet_wrap (~ Province, nrow = 2) + 
+    scale_fill_manual(values = custom_palette) +
+    geom_text(data = u_o_rsq, aes(x = x, y = y, label = labels), parse = TRUE) +
+    labs(title = "Oil Price vs. Unemployment in Canadian Provinces",
+         subtitle = "How does the correlation differ in different regions?",
+         x = "WTI Crude Spot Price (USD)",
+         y = "Seasonally Adjusted Unemployment Rate",
+         fill = "Year",
+         caption = "Created by: Alexander Ondrus\nEmployment Data: Statistics Canada.  Table  14-10-0287-03\nLabour force characteristics by province, monthly, seasonally adjusted\nOil Prices: Federal Reserve Bank of St. Louis,\nSpot Crude Oil Price: West Texas Intermediate (WTI) [WTISPLC],\nretrieved from FRED, Federal Reserve Bank of St. Louis;\nhttps://fred.stlouisfed.org/series/WTISPLC, February 27, 2020") +
+  scale_x_continuous(labels = scales::dollar) +
+  scale_y_continuous(labels = scales::percent)
+
+plot(p1)
+```
+
+
+### Outputting the Plot
+
+I include the `ggsave()` command below as it contains the parameters that I find work well on either mobile or desktop browsers (in twitter at least).
+
+```
+ggsave("Oil_vs_Unemployment.jpeg", plot = p, width = 30, height = 20, units = "cm", dpi = "retina")
+```
+
+## Next Steps
+
+1. Investigate the statistical significance of the difference in $R^2$-values for each of the different provinces.
+2. Examine the impacts of autocorrelation on the significance of the differences in values.
+3. Examine the impacts of natural gas and interprovincial migration.
+4. For Alberta specifically, look at the WCS price versus unemployment as opposed to WTI.
+5. For Alberta specifically, look at the correlation between _production_ and unemployment as opposed to _price_ (then do the same for _employment_ as opposed to _unemployment_). 
+6. For all provinces, examine the correlations that exist for _employment_ as opposed to _unemployment_.
+
+### New Data and Ideas
+
+#### Data Sources
+
+Some data sources that I had not considered but were mentioned to me by various people on twitter are:
+
+- [EIA](https://www.eia.gov/)
+- [Government of Alberta Economic Dashboard - Oil Production](https://economicdashboard.alberta.ca/OilProduction#alberta)
+- [Government of Alberta Economic Dashboard - Oil Prices](https://economicdashboard.alberta.ca/OilPrice)
+- [Sproule Price Forecast](https://sproule.com/price-forecast/)
+- [Interprovincial Employment in Canada, 2002 to 2011](https://www150.statcan.gc.ca/n1/pub/11-626-x/11-626-x2015047-eng.htm)
+
+#### Ideas
+
+Thanks to [Steven Klaiber-Noble](https://twitter.com/snoble) and (several) others who pointed out that I had not considered the impacts of autocorrelation or whether the variables were cointegrated. Steven pointed me to a well-written [blog post](http://blog.noblemail.ca/2011/05/your-n-is-probably-lot-smaller-than-you.html?m=1) on the topic as well.
+
+[Rob Johnston](https://twitter.com/Finite_Elephant) also mentioned that I could integrate the impacts of natural gas prices on employment.
