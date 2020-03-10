@@ -3,8 +3,8 @@ title: "Oil Prices and Unemployment in Canadian Provinces"
 author: "Alexander Ondrus"
 date: "2/27/2020"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -183,3 +183,5 @@ Some data sources that I had not considered but were mentioned to me by various 
 Thanks to [Steven Klaiber-Noble](https://twitter.com/snoble) and (several) others who pointed out that I had not considered the impacts of autocorrelation or whether the variables were cointegrated. Steven pointed me to a well-written [blog post](http://blog.noblemail.ca/2011/05/your-n-is-probably-lot-smaller-than-you.html?m=1) on the topic as well.
 
 [Rob Johnston](https://twitter.com/Finite_Elephant) also mentioned that I could integrate the impacts of natural gas prices on employment.
+
+[Here](http://bkenkel.com/psci8357/notes/05-ncv.html) is a resource on variance of the error term (*heteroskedasticity*) that contains some useful R code as well as theoretical background. (Thanks to Brenton Kenkel)
